@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".TaskerLiteApp"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TaskerLite"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TaskerLite"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".service.AutomationService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Receives Sleep as Android automation intents and controls LAN smart bulbs overnight" />
+        </service>
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Explicit package-targeted broadcasts (adb -p com.taskerlite). Runtime
+             registration in AutomationService still required for Sleep's implicit intents. -->
+        <receiver
+            android:name=".sleep.SleepEventReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.urbandroid.sleep.alarmclock.SLEEP_TRACKING_STARTED_AUTO" />
+                <action android:name="com.urbandroid.sleep.alarmclock.SLEEP_TRACKING_STOPPED_AUTO" />
+                <action android:name="com.urbandroid.sleep.alarmclock.TIME_TO_BED_ALARM_ALERT_AUTO" />
+                <action android:name="com.urbandroid.sleep.alarmclock.ALARM_ALERT_START_AUTO" />
+                <action android:name="com.urbandroid.sleep.alarmclock.ALARM_ALERT_DISMISS_AUTO" />
+                <action android:name="com.urbandroid.sleep.alarmclock.ALARM_SNOOZE_CLICKED_ACTION_AUTO" />
+                <action android:name="com.urbandroid.sleep.TRACKING_DEEP_SLEEP_AUTO" />
+                <action android:name="com.urbandroid.sleep.TRACKING_LIGHT_SLEEP_AUTO" />
+                <action android:name="com.urbandroid.sleep.SMART_PERIOD_AUTO" />
+                <action android:name="com.urbandroid.sleep.ACTION_LULLABY_START_PLAYBACK_AUTO" />
+                <action android:name="com.urbandroid.sleep.ACTION_LULLABY_STOPPED_PLAYBACK_AUTO" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

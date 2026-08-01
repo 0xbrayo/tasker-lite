@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tasker Lite</string>
+    <string name="notification_channel_name">Automation</string>
+    <string name="notification_channel_desc">Keeps Sleep as Android event listening active</string>
+    <string name="notification_title">Tasker Lite is listening</string>
+    <string name="notification_text">Sleep events will control your bulb</string>
+    <string name="stop">Stop</string>
+</resources>
