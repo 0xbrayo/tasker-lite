@@ -75,7 +75,51 @@ export ANDROID_HOME=$HOME/Library/Android/sdk   # or your SDK path
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Release APK (same task CI uses):
+
+```bash
+./gradlew :app:assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+```
+
 Or open the project in **Android Studio** and Run.
+
+## Releasing an APK (signed git tag → GitHub Release)
+
+Pushing a **cryptographically signed** annotated tag matching `v*` runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml): it verifies the
+tag signature, runs `./gradlew :app:assembleRelease`, and attaches the APK to a
+GitHub Release for that tag. **Unsigned or lightweight tags fail** (no release).
+
+### Cut a release
+
+```bash
+# GPG-signed annotated tag (recommended)
+git tag -s v1.0.0 -m "Tasker Lite v1.0.0"
+git push origin v1.0.0
+
+# SSH-signed tag (if you use gpg.format=ssh)
+git tag -s v1.0.0 -m "Tasker Lite v1.0.0"
+git push origin v1.0.0
+```
+
+Lightweight tags (`git tag v1.0.0` without `-s` / `-a`) are rejected by CI.
+
+### Repository secrets (GitHub → Settings → Secrets and variables → Actions)
+
+| Secret | Required? | Purpose |
+|--------|-----------|---------|
+| `TAG_SIGNING_PUBLIC_KEY` | For GPG tags | ASCII-armored **public** key used to `git verify-tag` |
+| `TAG_SIGNING_ALLOWED_SIGNERS` | For SSH tags | Contents of an [allowed_signers](https://git-scm.com/docs/git-config#Documentation/git-config.txt-gpgsshallowedSignersFile) file for your signing key |
+| `RELEASE_KEYSTORE_BASE64` | Optional | Base64-encoded Android upload/release keystore |
+| `RELEASE_STORE_PASSWORD` | With keystore | Keystore password |
+| `RELEASE_KEY_ALIAS` | With keystore | Key alias |
+| `RELEASE_KEY_PASSWORD` | With keystore | Key password |
+
+Without a release keystore, CI still builds an **installable** release APK signed
+with the **Android debug keystore** (fine for personal sideloading; not a Play
+Store upload key). `GITHUB_TOKEN` is provided automatically for creating the
+Release.
 
 ## First-run setup
 
