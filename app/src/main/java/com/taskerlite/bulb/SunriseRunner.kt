@@ -9,17 +9,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Runs dawn simulations without blocking the broadcast receiver.
  * Yeelight path finishes after one `start_cf`; miIO path may run ~30 minutes.
+ *
+ * Jobs are tracked per bulb so a ramp on one bulb does not cancel a ramp on another.
  */
 object SunriseRunner {
     private const val TAG = "SunriseRunner"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val job = AtomicReference<Job?>(null)
-    private val activeBulb = AtomicReference<Bulb?>(null)
+    private val jobs = ConcurrentHashMap<String, Job>()
+    private val activeBulbs = ConcurrentHashMap<String, Bulb>()
 
     @Volatile
     private var appContext: Context? = null
@@ -28,9 +30,17 @@ object SunriseRunner {
         appContext = context.applicationContext
     }
 
+    /** Cancels dawn on every bulb (global teardown, e.g. alarm dismissed). */
     fun cancel() {
-        val bulb = activeBulb.getAndSet(null)
-        job.getAndSet(null)?.cancel()
+        val ids = (jobs.keys + activeBulbs.keys).toSet()
+        ids.forEach { cancel(it) }
+        Log.i(TAG, "Dawn cancelled on ${ids.size} bulb(s)")
+    }
+
+    /** Cancels dawn for [bulbId] only, and tells that bulb to stop its color flow. */
+    fun cancel(bulbId: String) {
+        val bulb = activeBulbs.remove(bulbId)
+        jobs.remove(bulbId)?.cancel()
         if (bulb != null) {
             scope.launch {
                 runCatching {
@@ -38,7 +48,7 @@ object SunriseRunner {
                 }
             }
         }
-        Log.i(TAG, "Dawn cancelled")
+        Log.i(TAG, "Dawn cancelled for $bulbId")
     }
 
     fun start(
@@ -46,8 +56,8 @@ object SunriseRunner {
         action: LightAction.Sunrise,
         onFinished: (Result<Unit>) -> Unit = {},
     ) {
-        job.getAndSet(null)?.cancel()
-        activeBulb.set(bulb)
+        jobs.remove(bulb.id)?.cancel()
+        activeBulbs[bulb.id] = bulb
         val newJob = scope.launch {
             val result = try {
                 BulbController(bulb, appContext).runSunrise(action)
@@ -57,19 +67,19 @@ object SunriseRunner {
             if (result.isFailure &&
                 result.exceptionOrNull() is kotlinx.coroutines.CancellationException
             ) {
-                Log.i(TAG, "Dawn cancelled mid-run")
-                activeBulb.compareAndSet(bulb, null)
+                Log.i(TAG, "Dawn cancelled mid-run on ${bulb.name}")
+                activeBulbs.remove(bulb.id, bulb)
                 return@launch
             }
-            activeBulb.compareAndSet(bulb, null)
+            activeBulbs.remove(bulb.id, bulb)
             onFinished(result)
         }
-        job.set(newJob)
+        jobs[bulb.id] = newJob
         newJob.invokeOnCompletion {
-            job.compareAndSet(newJob, null)
+            jobs.remove(bulb.id, newJob)
         }
     }
 
     val isRunning: Boolean
-        get() = job.get()?.isActive == true
+        get() = jobs.values.any { it.isActive }
 }

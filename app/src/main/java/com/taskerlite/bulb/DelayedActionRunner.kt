@@ -9,16 +9,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Runs long light actions (e.g. dim-warm + wait 15m + off) without blocking
  * the Sleep broadcast receiver. Cancelled when sleep tracking stops.
+ *
+ * Jobs are tracked per bulb: starting an action on one bulb must not cancel a
+ * pending auto-off on another.
  */
 object DelayedActionRunner {
     private const val TAG = "DelayedActionRunner"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val job = AtomicReference<Job?>(null)
+    private val jobs = ConcurrentHashMap<String, Job>()
 
     @Volatile
     private var appContext: Context? = null
@@ -27,9 +30,17 @@ object DelayedActionRunner {
         appContext = context.applicationContext
     }
 
+    /** Cancels pending actions on every bulb (global teardown, e.g. tracking stopped). */
     fun cancel() {
-        job.getAndSet(null)?.cancel()
-        Log.i(TAG, "Delayed action cancelled")
+        val ids = jobs.keys.toList()
+        ids.forEach { cancel(it) }
+        Log.i(TAG, "Delayed actions cancelled on ${ids.size} bulb(s)")
+    }
+
+    /** Cancels only the pending action for [bulbId], leaving other bulbs running. */
+    fun cancel(bulbId: String) {
+        jobs.remove(bulbId)?.cancel()
+        Log.i(TAG, "Delayed action cancelled for $bulbId")
     }
 
     fun start(
@@ -37,7 +48,7 @@ object DelayedActionRunner {
         action: LightAction,
         onFinished: (Result<Unit>) -> Unit = {},
     ) {
-        job.getAndSet(null)?.cancel()
+        jobs.remove(bulb.id)?.cancel()
         val newJob = scope.launch {
             val result = try {
                 BulbController(bulb, appContext).runAction(action)
@@ -47,17 +58,17 @@ object DelayedActionRunner {
             if (result.isFailure &&
                 result.exceptionOrNull() is kotlinx.coroutines.CancellationException
             ) {
-                Log.i(TAG, "Delayed action cancelled mid-run")
+                Log.i(TAG, "Delayed action cancelled mid-run on ${bulb.name}")
                 return@launch
             }
             onFinished(result)
         }
-        job.set(newJob)
+        jobs[bulb.id] = newJob
         newJob.invokeOnCompletion {
-            job.compareAndSet(newJob, null)
+            jobs.remove(bulb.id, newJob)
         }
     }
 
     val isRunning: Boolean
-        get() = job.get()?.isActive == true
+        get() = jobs.values.any { it.isActive }
 }

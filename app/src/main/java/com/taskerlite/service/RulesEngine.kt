@@ -84,7 +84,7 @@ class RulesEngine(
     suspend fun runAction(bulb: Bulb, action: LightAction): Result<Unit> {
         return when {
             action is LightAction.Sunrise -> {
-                DelayedActionRunner.cancel()
+                DelayedActionRunner.cancel(bulb.id)
                 repo.appendLog(
                     LogEntry(
                         event = "MANUAL",
@@ -97,8 +97,8 @@ class RulesEngine(
             }
             action.isLongRunning() -> {
                 if (action is LightAction.Power && !action.on) {
-                    SunriseRunner.cancel()
-                    DelayedActionRunner.cancel()
+                    SunriseRunner.cancel(bulb.id)
+                    DelayedActionRunner.cancel(bulb.id)
                 }
                 repo.appendLog(
                     LogEntry(
@@ -112,8 +112,8 @@ class RulesEngine(
             }
             else -> {
                 if (action is LightAction.Power && !action.on) {
-                    SunriseRunner.cancel()
-                    DelayedActionRunner.cancel()
+                    SunriseRunner.cancel(bulb.id)
+                    DelayedActionRunner.cancel(bulb.id)
                 }
                 BulbController(bulb, repo.context).runAction(action)
             }
@@ -123,7 +123,7 @@ class RulesEngine(
     private suspend fun dispatch(eventName: String, bulb: Bulb, action: LightAction) {
         when {
             action is LightAction.Sunrise -> {
-                DelayedActionRunner.cancel()
+                DelayedActionRunner.cancel(bulb.id)
                 repo.appendLog(
                     LogEntry(
                         event = eventName,
@@ -151,7 +151,7 @@ class RulesEngine(
             action.isLongRunning() -> {
                 // e.g. dim warm → wait 15m → off (must not block the receiver)
                 if (action is LightAction.Power && !action.on) {
-                    SunriseRunner.cancel()
+                    SunriseRunner.cancel(bulb.id)
                 }
                 repo.appendLog(
                     LogEntry(
@@ -184,8 +184,8 @@ class RulesEngine(
             }
             else -> {
                 if (action is LightAction.Power && !action.on) {
-                    SunriseRunner.cancel()
-                    DelayedActionRunner.cancel()
+                    SunriseRunner.cancel(bulb.id)
+                    DelayedActionRunner.cancel(bulb.id)
                 }
                 val result = BulbController(bulb, repo.context).runAction(action)
                 repo.appendLog(

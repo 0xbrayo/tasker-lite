@@ -94,7 +94,7 @@ class RoutineAlarmReceiver : BroadcastReceiver() {
             }
             else -> {
                 if (action is LightAction.Power && !action.on) {
-                    SunriseRunner.cancel()
+                    SunriseRunner.cancel(bulb.id)
                 }
                 val result = com.taskerlite.bulb.BulbController(bulb, app).runAction(action)
                 repo.appendLog(
