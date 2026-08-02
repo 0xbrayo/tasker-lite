@@ -1,6 +1,7 @@
 package com.taskerlite.data
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -25,6 +26,9 @@ class PreferencesRepository(context: Context) {
 
     private val stateKey = stringPreferencesKey("app_state")
 
+    /** Last blob that failed to decode, kept so a bad migration cannot destroy bulb tokens. */
+    private val salvageKey = stringPreferencesKey("app_state_undecodable")
+
     val stateFlow: Flow<AppState> = context.dataStore.data.map { prefs ->
         prefs[stateKey]?.let { decode(it) } ?: AppState()
     }
@@ -33,8 +37,15 @@ class PreferencesRepository(context: Context) {
 
     suspend fun update(transform: (AppState) -> AppState) {
         context.dataStore.edit { prefs ->
-            val current = prefs[stateKey]?.let { decode(it) } ?: AppState()
-            prefs[stateKey] = json.encodeToString(transform(current))
+            val raw = prefs[stateKey]
+            val current = raw?.let { decode(it) }
+            if (raw != null && current == null) {
+                // Defaults are about to overwrite state we could not read (e.g. a renamed
+                // LightAction subclass). Stash the original so it can be recovered instead
+                // of silently losing bulbs, tokens, rules and routines.
+                prefs[salvageKey] = raw
+            }
+            prefs[stateKey] = json.encodeToString(transform(current ?: AppState()))
         }
     }
 
@@ -107,7 +118,14 @@ class PreferencesRepository(context: Context) {
         update { it.copy(log = emptyList()) }
     }
 
-    private fun decode(raw: String): AppState =
-        runCatching { json.decodeFromString<AppState>(raw) }.getOrElse { AppState() }
+    /** Returns null (not defaults) when [raw] cannot be read, so callers can react. */
+    private fun decode(raw: String): AppState? =
+        runCatching { json.decodeFromString<AppState>(raw) }
+            .onFailure { Log.e(TAG, "Could not decode saved state — falling back to defaults", it) }
+            .getOrNull()
+
+    private companion object {
+        const val TAG = "PreferencesRepository"
+    }
 }
 
