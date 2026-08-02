@@ -84,6 +84,18 @@ Release APK (same task CI uses):
 
 Or open the project in **Android Studio** and Run.
 
+### Continuous integration
+
+Every **push** (and pull request) runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+JDK 17, Android SDK, then:
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+A failing suite fails the job (red CI). Release/tag APK publishing stays in a separate
+workflow ([`release.yml`](.github/workflows/release.yml)).
+
 ## Releasing an APK (signed git tag → GitHub Release)
 
 Pushing a **cryptographically signed** annotated tag matching `v*` runs
