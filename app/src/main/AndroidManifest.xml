@@ -16,9 +16,12 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- Backup is off: the DataStore holds cleartext miIO tokens, which are per-device
+         secrets granting full LAN control of the bulb. Excluding just that file would
+         exclude all app state anyway, since it is the only thing we persist. -->
     <application
         android:name=".TaskerLiteApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_launcher_round"
