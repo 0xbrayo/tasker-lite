@@ -77,6 +77,25 @@ class PreferencesRepository(context: Context) {
         update { it.copy(rules = it.rules.filterNot { r -> r.id == id }) }
     }
 
+    suspend fun saveRoutines(routines: List<ScheduledRoutine>) {
+        update { it.copy(routines = routines) }
+    }
+
+    suspend fun upsertRoutine(routine: ScheduledRoutine) {
+        update { state ->
+            val without = state.routines.filterNot { it.id == routine.id }
+            state.copy(routines = without + routine)
+        }
+    }
+
+    suspend fun deleteRoutine(id: String) {
+        update { it.copy(routines = it.routines.filterNot { r -> r.id == id }) }
+    }
+
+    suspend fun setLocation(location: GeoLocation?) {
+        update { it.copy(location = location) }
+    }
+
     suspend fun appendLog(entry: LogEntry, maxEntries: Int = 100) {
         update { state ->
             val next = (listOf(entry) + state.log).take(maxEntries)

@@ -6,13 +6,24 @@ Built for the **Xiaomi Smart LED Bulb – White and Color** (SKU **59875** / mod
 
 ## What it does
 
+### Sleep as Android rules
+
 | Sleep as Android event | Default light scene |
 |---|---|
-| Sleep tracking started / Bedtime | Warm dim (2700K, 10%) |
+| Sleep tracking started | **If already on:** warm dim (2700K, 10%) → **off after 15 min**. If off, leave off. |
+| Bedtime | Warm dim (2700K, 10%) |
 | Alarm triggered (`ALARM_ALERT_START_AUTO`) | **30 min dawn** — Yeelight `start_cf` offload, or miIO phased ramp (1700K@1% → 3000K@50% → 6500K@100%) |
 | Alarm dismissed (`ALARM_ALERT_DISMISS_AUTO`) | **Stop color flow + power off** (1s smooth) |
 
-Rules are editable in the app. You can also turn the bulb on/off/dim from the Home tab.
+### Scheduled routines (sunset / fixed time)
+
+| Routine | Default |
+|---|---|
+| **Sunset lights up** | At local **sunset** (from GPS/network location), **30 min warm ramp** 1%→70% (2000K→2700K) |
+
+Open the **Routines** tab, grant location, and confirm today's sunset. Offset the start by ±15–60 minutes if you like. Routines use `AlarmManager` alarm-clock scheduling and re-arm after reboot.
+
+Rules and routines are editable in the app. You can also turn the bulb on/off/dim from the Home tab.
 
 ## How it works
 
@@ -102,7 +113,9 @@ app/src/main/java/com/taskerlite/
 | `CHANGE_WIFI_MULTICAST_STATE` | Discovery |
 | `FOREGROUND_SERVICE` (+ special use) | Keep receiver alive overnight |
 | `POST_NOTIFICATIONS` | Service notification |
-| `RECEIVE_BOOT_COMPLETED` | Restart service after reboot |
+| `RECEIVE_BOOT_COMPLETED` | Restart service + reschedule routines after reboot |
+| `ACCESS_COARSE/FINE_LOCATION` | Approximate location for sunset/sunrise times |
+| `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` | Fire routines at the computed solar time |
 
 ## License
 

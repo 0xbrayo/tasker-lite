@@ -1,6 +1,7 @@
 package com.taskerlite.service
 
 import com.taskerlite.bulb.BulbController
+import com.taskerlite.bulb.DelayedActionRunner
 import com.taskerlite.bulb.SunriseRunner
 import com.taskerlite.data.Bulb
 import com.taskerlite.data.LightAction
@@ -21,11 +22,12 @@ class RulesEngine(
     private val logScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun handle(event: SleepEvent) {
-        // Dismiss / stop: tear down dawn (stop_cf + cancel phone ramp) per integration guide
+        // Dismiss / stop: tear down dawn + cancel delayed auto-off
         if (event == SleepEvent.ALARM_DISMISSED ||
             event == SleepEvent.SLEEP_TRACKING_STOPPED
         ) {
             SunriseRunner.cancel()
+            DelayedActionRunner.cancel()
         }
 
         val work: List<Pair<Bulb, LightAction>>
@@ -65,50 +67,7 @@ class RulesEngine(
         }
 
         for ((bulb, action) in work) {
-            when (action) {
-                is LightAction.Sunrise -> {
-                    repo.appendLog(
-                        LogEntry(
-                            event = event.name,
-                            message = "${bulb.name}: starting ${action.summary()}",
-                            success = true,
-                        )
-                    )
-                    SunriseRunner.start(bulb, action) { result ->
-                        logScope.launch {
-                            repo.appendLog(
-                                LogEntry(
-                                    event = event.name,
-                                    message = if (result.isSuccess) {
-                                        "${bulb.name}: dawn complete / CF started"
-                                    } else {
-                                        "${bulb.name}: dawn failed: " +
-                                            (result.exceptionOrNull()?.message ?: "error")
-                                    },
-                                    success = result.isSuccess,
-                                )
-                            )
-                        }
-                    }
-                }
-                else -> {
-                    if (action is LightAction.Power && !action.on) {
-                        SunriseRunner.cancel()
-                    }
-                    val result = BulbController(bulb, repo.context).runAction(action)
-                    repo.appendLog(
-                        LogEntry(
-                            event = event.name,
-                            message = if (result.isSuccess) {
-                                "${bulb.name} (${bulb.protocolLabel}): ${action.summary()}"
-                            } else {
-                                "${bulb.name}: ${result.exceptionOrNull()?.message ?: "failed"}"
-                            },
-                            success = result.isSuccess,
-                        )
-                    )
-                }
-            }
+            dispatch(event.name, bulb, action)
         }
     }
 
@@ -123,8 +82,9 @@ class RulesEngine(
     }
 
     suspend fun runAction(bulb: Bulb, action: LightAction): Result<Unit> {
-        return when (action) {
-            is LightAction.Sunrise -> {
+        return when {
+            action is LightAction.Sunrise -> {
+                DelayedActionRunner.cancel()
                 repo.appendLog(
                     LogEntry(
                         event = "MANUAL",
@@ -135,13 +95,110 @@ class RulesEngine(
                 SunriseRunner.start(bulb, action)
                 Result.success(Unit)
             }
+            action.isLongRunning() -> {
+                if (action is LightAction.Power && !action.on) {
+                    SunriseRunner.cancel()
+                    DelayedActionRunner.cancel()
+                }
+                repo.appendLog(
+                    LogEntry(
+                        event = "MANUAL",
+                        message = "${bulb.name}: starting ${action.summary()}",
+                        success = true,
+                    )
+                )
+                DelayedActionRunner.start(bulb, action)
+                Result.success(Unit)
+            }
             else -> {
                 if (action is LightAction.Power && !action.on) {
                     SunriseRunner.cancel()
-                } else if (action !is LightAction.Sunrise) {
-                    // Don't cancel dawn for unrelated short actions unless power off
+                    DelayedActionRunner.cancel()
                 }
                 BulbController(bulb, repo.context).runAction(action)
+            }
+        }
+    }
+
+    private suspend fun dispatch(eventName: String, bulb: Bulb, action: LightAction) {
+        when {
+            action is LightAction.Sunrise -> {
+                DelayedActionRunner.cancel()
+                repo.appendLog(
+                    LogEntry(
+                        event = eventName,
+                        message = "${bulb.name}: starting ${action.summary()}",
+                        success = true,
+                    )
+                )
+                SunriseRunner.start(bulb, action) { result ->
+                    logScope.launch {
+                        repo.appendLog(
+                            LogEntry(
+                                event = eventName,
+                                message = if (result.isSuccess) {
+                                    "${bulb.name}: dawn complete / CF started"
+                                } else {
+                                    "${bulb.name}: dawn failed: " +
+                                        (result.exceptionOrNull()?.message ?: "error")
+                                },
+                                success = result.isSuccess,
+                            )
+                        )
+                    }
+                }
+            }
+            action.isLongRunning() -> {
+                // e.g. dim warm → wait 15m → off (must not block the receiver)
+                if (action is LightAction.Power && !action.on) {
+                    SunriseRunner.cancel()
+                }
+                repo.appendLog(
+                    LogEntry(
+                        event = eventName,
+                        message = "${bulb.name}: starting ${action.summary()}",
+                        success = true,
+                    )
+                )
+                DelayedActionRunner.start(bulb, action) { result ->
+                    logScope.launch {
+                        repo.appendLog(
+                            LogEntry(
+                                event = eventName,
+                                message = if (result.isSuccess) {
+                                    "${bulb.name}: ${action.summary()} complete"
+                                } else if (result.exceptionOrNull() is
+                                    kotlinx.coroutines.CancellationException
+                                ) {
+                                    "${bulb.name}: delayed action cancelled"
+                                } else {
+                                    "${bulb.name}: ${result.exceptionOrNull()?.message ?: "failed"}"
+                                },
+                                success = result.isSuccess ||
+                                    result.exceptionOrNull() is
+                                    kotlinx.coroutines.CancellationException,
+                            )
+                        )
+                    }
+                }
+            }
+            else -> {
+                if (action is LightAction.Power && !action.on) {
+                    SunriseRunner.cancel()
+                    DelayedActionRunner.cancel()
+                }
+                val result = BulbController(bulb, repo.context).runAction(action)
+                repo.appendLog(
+                    LogEntry(
+                        event = eventName,
+                        message = if (result.isSuccess) {
+                            "${bulb.name} (${bulb.protocolLabel}): ${action.summary()}"
+                        } else {
+                            "${bulb.name}: ${result.exceptionOrNull()?.message ?: "failed"}"
+                        },
+                        success = result.isSuccess,
+                    )
+                )
             }
         }
     }

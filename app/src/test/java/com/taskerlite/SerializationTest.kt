@@ -33,7 +33,7 @@ class SerializationTest {
         assertEquals("192.168.1.10", decoded.bulbs.first().ip)
         assertEquals(defaultRules().size, decoded.rules.size)
         assertTrue(decoded.serviceEnabled)
-        assertTrue(decoded.rules.first().action is LightAction.Scene)
+        assertTrue(decoded.rules.first().action is LightAction.OnlyIfOn)
     }
 
     @Test

@@ -38,10 +38,13 @@ import com.taskerlite.data.LightAction
 import com.taskerlite.data.Rule
 
 private enum class PresetAction(val label: String) {
-    OFF("Turn off (stop dawn)"),
+    OFF("Turn off (stop ramp)"),
     DIM_WARM("Dim warm (10% · 2700K)"),
+    DIM_WARM_OFF("If on: dim warm → off after 15m"),
     DAWN("Dawn 30 min (CF / phased)"),
     DAWN_FAST("Dawn 2 min test"),
+    SUNSET_RAMP("Sunset ramp 30 min"),
+    SUNSET_RAMP_TEST("Sunset ramp 90s test"),
     DAYLIGHT("Daylight (100% · 5000K)"),
     FULL_ON("Full on (100%)"),
 }
@@ -166,8 +169,11 @@ private fun PresetAction.toAction(): LightAction = when (this) {
             LightAction.Brightness(10, 800),
         )
     )
+    PresetAction.DIM_WARM_OFF -> LightAction.dimWarmThenOff()
     PresetAction.DAWN -> LightAction.morningSunrise()
     PresetAction.DAWN_FAST -> LightAction.morningSunriseTest()
+    PresetAction.SUNSET_RAMP -> LightAction.eveningSunsetRamp()
+    PresetAction.SUNSET_RAMP_TEST -> LightAction.eveningSunsetRampTest()
     PresetAction.DAYLIGHT -> LightAction.Scene(
         listOf(
             LightAction.Power(true, 500),

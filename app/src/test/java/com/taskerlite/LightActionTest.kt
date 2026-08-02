@@ -41,10 +41,18 @@ class LightActionTest {
         val sunrise = alarm.action as LightAction.Sunrise
         assertEquals(3, sunrise.phases.size)
         assertEquals(1_800_000, sunrise.totalDurationMs())
+        assertEquals("Dawn", sunrise.label)
         assertEquals(
             "600000,2,1700,1,600000,2,3000,50,600000,2,6500,100",
             sunrise.flowExpression(),
         )
+    }
+
+    @Test
+    fun sunsetRamp_summary() {
+        val summary = LightAction.eveningSunsetRamp().summary()
+        assertTrue(summary.contains("Sunset ramp"))
+        assertTrue(summary.contains("30 min"))
     }
 
     @Test
@@ -53,5 +61,21 @@ class LightActionTest {
         val power = dismiss.action as LightAction.Power
         assertEquals(false, power.on)
         assertEquals(1000, power.durationMs)
+    }
+
+    @Test
+    fun sleepStart_dimWarmThenOffAfter15Min_onlyIfOn() {
+        val start = defaultRules().first { it.event == "SLEEP_TRACKING_STARTED" }
+        val gated = start.action as LightAction.OnlyIfOn
+        assertTrue(gated.isLongRunning())
+        assertTrue(gated.summary().startsWith("If on:"))
+        assertTrue(gated.summary().contains("Wait 15m"))
+        val scene = gated.action as LightAction.Scene
+        // Must not force power-on (only adjust if already on)
+        assertTrue(scene.steps.none { it is LightAction.Power && it.on })
+        val wait = scene.steps.filterIsInstance<LightAction.Wait>().single()
+        assertEquals(LightAction.FIFTEEN_MIN_MS, wait.durationMs)
+        val last = scene.steps.last() as LightAction.Power
+        assertEquals(false, last.on)
     }
 }

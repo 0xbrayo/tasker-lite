@@ -133,21 +133,62 @@ class BulbController(
         }
     }
 
+    /** Query whether the bulb currently reports power on. */
+    suspend fun isPoweredOn(): Result<Boolean> = runCatching {
+        if (useMiio) {
+            val power = readProp(PIID_POWER)
+            when (power) {
+                true, 1 -> true
+                false, 0 -> false
+                else -> power.toString().equals("true", ignoreCase = true) ||
+                    power.toString().equals("on", ignoreCase = true) ||
+                    power.toString() == "1"
+            }
+        } else {
+            val props = YeelightClient(bulb.ip, bulb.port).getProp("power").getOrThrow()
+            props["power"].equals("on", ignoreCase = true)
+        }
+    }
+
     suspend fun runAction(action: LightAction): Result<Unit> {
         return when (action) {
             is LightAction.Power -> setPower(action.on, action.durationMs)
             is LightAction.Brightness -> setBright(action.percent, action.durationMs)
             is LightAction.ColorTemp -> setCt(action.kelvin, action.durationMs)
             is LightAction.Rgb -> setRgb(action.color, action.durationMs)
+            is LightAction.Wait -> {
+                Log.i(TAG, "Waiting ${action.durationMs}ms on ${bulb.name}")
+                delay(action.durationMs)
+                Result.success(Unit)
+            }
+            is LightAction.OnlyIfOn -> {
+                val powered = isPoweredOn()
+                if (powered.isFailure) {
+                    Log.w(
+                        TAG,
+                        "Could not read power on ${bulb.name}; skipping to avoid turning on: " +
+                            (powered.exceptionOrNull()?.message ?: "error"),
+                    )
+                    return Result.success(Unit)
+                }
+                if (powered.getOrDefault(false) != true) {
+                    Log.i(TAG, "${bulb.name} already off — skipping: ${action.action.summary()}")
+                    return Result.success(Unit)
+                }
+                runAction(action.action)
+            }
             is LightAction.Scene -> {
                 var last: Result<Unit> = Result.success(Unit)
                 for (step in action.steps) {
+                    currentCoroutineContext().ensureActive()
                     last = runAction(step)
                     if (last.isFailure) {
                         Log.w(TAG, "Scene step failed: ${step.summary()}")
                         return last
                     }
-                    delay(80)
+                    if (step !is LightAction.Wait) {
+                        delay(80)
+                    }
                 }
                 last
             }

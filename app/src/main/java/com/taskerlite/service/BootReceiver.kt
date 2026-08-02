@@ -25,10 +25,16 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val app = context.applicationContext as? TaskerLiteApp
-                val enabled = app?.repository?.getState()?.serviceEnabled == true
-                if (enabled) {
-                    Log.i(TAG, "Restarting AutomationService after boot")
-                    AutomationService.start(context.applicationContext)
+                val repo = app?.repository
+                if (repo != null) {
+                    // Re-arm sunset / fixed-time routines after reboot
+                    runCatching {
+                        RoutineScheduler.rescheduleAll(context.applicationContext, repo)
+                    }
+                    if (repo.getState().serviceEnabled) {
+                        Log.i(TAG, "Restarting AutomationService after boot")
+                        AutomationService.start(context.applicationContext)
+                    }
                 }
             } finally {
                 pending.finish()

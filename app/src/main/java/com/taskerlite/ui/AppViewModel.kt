@@ -11,8 +11,11 @@ import com.taskerlite.data.Bulb
 import com.taskerlite.data.LightAction
 import com.taskerlite.data.LogEntry
 import com.taskerlite.data.PreferencesRepository
+import com.taskerlite.data.defaultRoutines
 import com.taskerlite.data.defaultRules
+import com.taskerlite.location.LocationHelper
 import com.taskerlite.service.AutomationService
+import com.taskerlite.service.RoutineScheduler
 import com.taskerlite.service.RulesEngine
 import com.taskerlite.yeelight.YeelightDiscovery
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -273,8 +276,92 @@ class AppViewModel(
         }
     }
 
+    fun setRoutineEnabled(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val routine = repo.getState().routines.find { it.id == id } ?: return@launch
+            repo.upsertRoutine(routine.copy(enabled = enabled))
+            rescheduleRoutines()
+            _statusMessage.value = if (enabled) "Routine enabled" else "Routine disabled"
+        }
+    }
+
+    fun deleteRoutine(id: String) {
+        viewModelScope.launch {
+            repo.deleteRoutine(id)
+            rescheduleRoutines()
+        }
+    }
+
+    fun updateRoutineAction(id: String, action: LightAction) {
+        viewModelScope.launch {
+            val routine = repo.getState().routines.find { it.id == id } ?: return@launch
+            repo.upsertRoutine(routine.copy(action = action))
+            rescheduleRoutines()
+        }
+    }
+
+    fun updateRoutineOffset(id: String, offsetMinutes: Int) {
+        viewModelScope.launch {
+            val routine = repo.getState().routines.find { it.id == id } ?: return@launch
+            repo.upsertRoutine(routine.copy(offsetMinutes = offsetMinutes))
+            rescheduleRoutines()
+            _statusMessage.value = "Offset updated · schedules refreshed"
+        }
+    }
+
+    fun resetDefaultRoutines() {
+        viewModelScope.launch {
+            repo.saveRoutines(defaultRoutines())
+            rescheduleRoutines()
+            _statusMessage.value = "Restored default routines"
+        }
+    }
+
+    fun refreshLocation() {
+        viewModelScope.launch {
+            _statusMessage.value = "Resolving location…"
+            val resolved = LocationHelper.resolve(appContext, repo.getState().location)
+            if (resolved != null) {
+                repo.setLocation(resolved)
+                rescheduleRoutines()
+                _statusMessage.value =
+                    "Location ${"%.2f".format(resolved.latitude)}, ${"%.2f".format(resolved.longitude)} " +
+                        "(${resolved.source}) — schedules updated"
+            } else {
+                _statusMessage.value =
+                    if (LocationHelper.hasLocationPermission(appContext)) {
+                        "Could not get location — try outdoors or enable location services"
+                    } else {
+                        "Location permission required for sunset times"
+                    }
+            }
+        }
+    }
+
+    fun quickSunsetRamp() {
+        viewModelScope.launch {
+            val bulb = defaultBulb() ?: run {
+                _statusMessage.value = "Add a bulb first"
+                return@launch
+            }
+            engine.runAction(bulb, LightAction.eveningSunsetRampTest()).fold(
+                onSuccess = {
+                    _statusMessage.value = "Sunset ramp started (90s test · 3 phases)"
+                },
+                onFailure = { e -> _statusMessage.value = e.message }
+            )
+        }
+    }
+
     fun clearLog() {
         viewModelScope.launch { repo.clearLog() }
+    }
+
+    private suspend fun rescheduleRoutines() {
+        runCatching { RoutineScheduler.rescheduleAll(appContext, repo) }
+            .onFailure { e ->
+                Log.w("AppViewModel", "Reschedule failed", e)
+            }
     }
 
     private suspend fun defaultBulb(): Bulb? {

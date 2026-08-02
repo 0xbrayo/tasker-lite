@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,8 +23,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -32,12 +37,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.taskerlite.location.LocationHelper
 import com.taskerlite.service.AutomationService
 import com.taskerlite.ui.AppViewModel
 import com.taskerlite.ui.AppViewModelFactory
 import com.taskerlite.ui.BulbsScreen
 import com.taskerlite.ui.HomeScreen
 import com.taskerlite.ui.LogScreen
+import com.taskerlite.ui.RoutinesScreen
 import com.taskerlite.ui.RulesScreen
 import com.taskerlite.ui.theme.TaskerLiteTheme
 import kotlinx.coroutines.launch
@@ -80,8 +87,23 @@ class MainActivity : ComponentActivity() {
                 needed += Manifest.permission.POST_NOTIFICATIONS
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Nearby Wi-Fi devices not strictly required for sockets; skip
+        // Location is optional at first launch — requested from Routines tab when needed
+        if (needed.isNotEmpty()) {
+            permissionLauncher.launch(needed.toTypedArray())
+        }
+    }
+
+    fun requestLocationPermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed += Manifest.permission.ACCESS_COARSE_LOCATION
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed += Manifest.permission.ACCESS_FINE_LOCATION
         }
         if (needed.isNotEmpty()) {
             permissionLauncher.launch(needed.toTypedArray())
@@ -95,6 +117,7 @@ private val tabs = listOf(
     Tab("home", "Home", Icons.Default.Home),
     Tab("bulbs", "Bulbs", Icons.Default.Lightbulb),
     Tab("rules", "Rules", Icons.AutoMirrored.Filled.Rule),
+    Tab("routines", "Routines", Icons.Default.Schedule),
     Tab("log", "Log", Icons.AutoMirrored.Filled.List),
 )
 
@@ -106,6 +129,12 @@ fun TaskerLiteAppScaffold(vm: AppViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val status by vm.statusMessage.collectAsStateWithLifecycle()
     val discovering by vm.discovering.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val activity = context as? MainActivity
+    var locationPermTick by remember { mutableStateOf(0) }
+    val hasLocationPermission = remember(locationPermTick) {
+        LocationHelper.hasLocationPermission(context)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -165,6 +194,28 @@ fun TaskerLiteAppScaffold(vm: AppViewModel) {
                     onDelete = { vm.deleteRule(it) },
                     onResetDefaults = { vm.resetDefaultRules() },
                     onUpdateAction = { id, action -> vm.updateRuleAction(id, action) },
+                )
+            }
+            composable("routines") {
+                RoutinesScreen(
+                    routines = state.routines,
+                    location = state.location,
+                    hasLocationPermission = hasLocationPermission,
+                    statusMessage = status,
+                    onToggle = { id, enabled -> vm.setRoutineEnabled(id, enabled) },
+                    onDelete = { vm.deleteRoutine(it) },
+                    onUpdateAction = { id, action -> vm.updateRoutineAction(id, action) },
+                    onUpdateOffset = { id, offset -> vm.updateRoutineOffset(id, offset) },
+                    onRefreshLocation = {
+                        locationPermTick++
+                        vm.refreshLocation()
+                    },
+                    onRequestLocationPermission = {
+                        activity?.requestLocationPermissions()
+                        locationPermTick++
+                    },
+                    onTestSunsetRamp = { vm.quickSunsetRamp() },
+                    onResetDefaults = { vm.resetDefaultRoutines() },
                 )
             }
             composable("log") {

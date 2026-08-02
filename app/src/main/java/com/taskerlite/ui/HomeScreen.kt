@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.taskerlite.data.AppState
+import com.taskerlite.data.ScheduleAnchor
 
 @Composable
 fun HomeScreen(
@@ -51,7 +52,7 @@ fun HomeScreen(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Sleep as Android → Xiaomi / Yeelight bulb",
+            text = "Sleep events + sunset schedules → Xiaomi / Yeelight",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -75,7 +76,7 @@ fun HomeScreen(
                         text = if (state.serviceEnabled) {
                             "Listening for Sleep as Android events"
                         } else {
-                            "Off — turn on to react overnight"
+                            "Off — turn on for overnight Sleep events"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -158,10 +159,35 @@ fun HomeScreen(
             )
         }
 
+        val sunsetRoutine = state.routines.firstOrNull {
+            it.enabled && it.anchor == ScheduleAnchor.SUNSET
+        }
+        if (sunsetRoutine != null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Sunset routine", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${sunsetRoutine.name} · ${sunsetRoutine.action.summary()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        if (state.location != null) {
+                            "Location set — open Routines for today's sunset time"
+                        } else {
+                            "Open Routines and grant location so sunset can be calculated"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
         Text(
             text = "Tip: In Sleep as Android go to Settings → Services → Automation and enable it. " +
-                "No Tasker install is required — this app listens for the same intents.",
+                "Sunset routines use GPS and run on a schedule (Routines tab) even when the " +
+                "Sleep listener is off.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
