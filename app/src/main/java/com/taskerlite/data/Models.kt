@@ -40,11 +40,15 @@ enum class SleepEvent(val displayName: String) {
 /**
  * One segment of a Yeelight color-flow / phased ramp:
  * `[durationMs, mode=2 (CT), kelvin, brightness]`.
+ *
+ * [brightness] is **percent of max lumens** (1–100), not a perceptual slider.
+ * Ramps interpolate lumen % on a **log scale** (see [com.taskerlite.bulb.BrightnessCurve]).
  */
 @Serializable
 data class DawnPhase(
     val durationMs: Int,
     val kelvin: Int,
+    /** Percent of max lumen output (1–100). */
     val brightness: Int,
 )
 
@@ -156,9 +160,15 @@ sealed class LightAction {
         /** UI label: "Dawn", "Sunset ramp", etc. */
         val label: String = "Dawn",
     ) : LightAction() {
-        /** Yeelight `start_cf` flow expression (mode 2 = color temperature). */
+        /**
+         * Yeelight `start_cf` flow expression (mode 2 = color temperature).
+         * Lumen targets are expanded with a log curve so firmware linear blends
+         * approximate geometric lumen growth.
+         */
         fun flowExpression(): String =
-            phases.joinToString(",") { "${it.durationMs},2,${it.kelvin},${it.brightness}" }
+            com.taskerlite.bulb.BrightnessCurve.flowExpressionLog(
+                phases.ifEmpty { defaultDawnPhases() },
+            )
 
         fun totalDurationMs(): Int = phases.sumOf { it.durationMs }
     }
@@ -182,7 +192,7 @@ sealed class LightAction {
             val ms = totalDurationMs()
             val dur = if (ms >= 60_000) "${ms / 60_000} min" else "${ms / 1000}s"
             val name = label.ifBlank { "Ramp" }
-            "$name · ${phases.size} phases · $dur (CF / phased)"
+            "$name · ${phases.size} phases · $dur · log-lumen (CF / phased)"
         }
     }
 

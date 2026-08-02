@@ -42,10 +42,18 @@ class LightActionTest {
         assertEquals(3, sunrise.phases.size)
         assertEquals(1_800_000, sunrise.totalDurationMs())
         assertEquals("Dawn", sunrise.label)
-        assertEquals(
-            "600000,2,1700,1,600000,2,3000,50,600000,2,6500,100",
-            sunrise.flowExpression(),
-        )
+        // Coarse phases expand to log-lumen CF keyframes (not the old 3 linear tuples)
+        val flow = sunrise.flowExpression()
+        assertTrue(flow.contains("6500,100") || flow.endsWith("100"))
+        assertTrue(flow.split(",").size >= 9 * 4)
+        assertTrue(sunrise.summary().contains("log-lumen"))
+    }
+
+    @Test
+    fun defaultAlarm_phasesStillDeclareLumenTargets() {
+        val alarm = defaultRules().first { it.event == "ALARM_TRIGGERED" }
+        val sunrise = alarm.action as LightAction.Sunrise
+        assertEquals(listOf(1, 50, 100), sunrise.phases.map { it.brightness })
     }
 
     @Test

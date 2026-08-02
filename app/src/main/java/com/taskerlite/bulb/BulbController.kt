@@ -21,7 +21,6 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * Unified controller: miIO/MIoT when token is set, else Yeelight LAN (TCP 55443).
@@ -197,8 +196,10 @@ class BulbController(
     }
 
     /**
-     * Yeelight: one `start_cf` (firmware offload, survives Doze).
-     * miIO: phased ramp matching the same CT/brightness targets + partial wake lock.
+     * Yeelight: one `start_cf` (firmware offload, survives Doze) with log-lumen keyframes.
+     * miIO: phone-side steps; lumen % log-lerped, CT linear.
+     *
+     * Phase brightness values are percent of max lumens (see [BrightnessCurve]).
      */
     suspend fun runSunrise(action: LightAction.Sunrise): Result<Unit> {
         val phases = action.phases.ifEmpty { LightAction.defaultDawnPhases() }
@@ -211,36 +212,32 @@ class BulbController(
 
     private suspend fun runYeelightColorFlow(flow: String): Result<Unit> = runCatching {
         val client = YeelightClient(bulb.ip, bulb.port)
-        // Ensure on, then offload 30-min flow to bulb (count=1, action=0 stay at end)
+        // Ensure on, then offload flow to bulb (count=1, action=0 stay at end)
         client.setPower(true, 300).getOrThrow()
         delay(80)
         client.startColorFlow(count = 1, action = 0, flowExpression = flow).getOrThrow()
-        Log.i(TAG, "Yeelight start_cf on ${bulb.name}: $flow")
+        Log.i(TAG, "Yeelight start_cf (log-lumen) on ${bulb.name}: $flow")
         Unit
     }
 
     private suspend fun runMiioPhasedDawn(phases: List<DawnPhase>): Result<Unit> = runCatching {
         val wakeLock = acquireWakeLock(phases.sumOf { it.durationMs }.toLong() + 60_000L)
         try {
-            Log.i(TAG, "miIO phased dawn on ${bulb.name}: ${phases.size} phases")
+            Log.i(TAG, "miIO log-lumen dawn on ${bulb.name}: ${phases.size} phases")
             setPower(true).getOrThrow()
             delay(100)
 
+            // Start at 1% lumens; each phase log-ramps lumen % toward its target
             var prevBright = 1
-            var prevKelvin = phases.first().kelvin
-
-            // Seed first target immediately (ultra-dim warm)
-            setCtOnly(phases.first().kelvin).getOrThrow()
-            setBrightOnly(phases.first().brightness.coerceAtLeast(1)).getOrThrow()
-            prevBright = phases.first().brightness.coerceAtLeast(1)
-            prevKelvin = phases.first().kelvin
+            var prevKelvin = phases.first().kelvin.coerceIn(1700, 6500)
+            setCtOnly(prevKelvin).getOrThrow()
+            setBrightOnly(1).getOrThrow()
 
             for ((index, phase) in phases.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 val targetB = phase.brightness.coerceIn(1, 100)
                 val targetK = phase.kelvin.coerceIn(1700, 6500)
 
-                // Within each phase, step toward targets (firmware CF does this smoothly)
                 val stepCount = max(1, phase.durationMs / STEP_MS)
                 val stepDelay = phase.durationMs.toLong() / stepCount
 
@@ -249,8 +246,10 @@ class BulbController(
                     delay(stepDelay)
                     currentCoroutineContext().ensureActive()
                     val t = s.toFloat() / stepCount
-                    val b = lerp(prevBright, targetB, t).coerceIn(1, 100)
-                    val k = lerp(prevKelvin, targetK, t).coerceIn(1700, 6500)
+                    // Lumen %: geometric (log) path; CT: linear
+                    val b = BrightnessCurve.logLerpLumens(prevBright, targetB, t)
+                    val k = BrightnessCurve.linearLerp(prevKelvin, targetK, t)
+                        .coerceIn(1700, 6500)
                     setBrightOnly(b).getOrThrow()
                     if (s % 2 == 0 || s == stepCount) {
                         setCtOnly(k).getOrThrow()
@@ -258,7 +257,7 @@ class BulbController(
                 }
                 prevBright = targetB
                 prevKelvin = targetK
-                Log.d(TAG, "Phase ${index + 1}/${phases.size} done → $targetB% / ${targetK}K")
+                Log.d(TAG, "Phase ${index + 1}/${phases.size} done → $targetB% lm / ${targetK}K")
             }
             Log.i(TAG, "miIO dawn complete on ${bulb.name}")
             Unit
@@ -322,7 +321,5 @@ class BulbController(
         /** miIO step interval within a dawn phase (~15s). */
         private const val STEP_MS = 15_000
 
-        private fun lerp(a: Int, b: Int, t: Float): Int =
-            (a + (b - a) * t).roundToInt()
     }
 }

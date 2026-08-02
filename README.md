@@ -12,7 +12,7 @@ Built for the **Xiaomi Smart LED Bulb – White and Color** (SKU **59875** / mod
 |---|---|
 | Sleep tracking started | **If already on:** warm dim (2700K, 10%) → **off after 15 min**. If off, leave off. |
 | Bedtime | Warm dim (2700K, 10%) |
-| Alarm triggered (`ALARM_ALERT_START_AUTO`) | **30 min dawn** — Yeelight `start_cf` offload, or miIO phased ramp (1700K@1% → 3000K@50% → 6500K@100%) |
+| Alarm triggered (`ALARM_ALERT_START_AUTO`) | **30 min dawn** — log-lumen ramp (phase % = max lumens): 1% → 50% → 100% lm with linear CT (1700K → 6500K); Yeelight `start_cf` or miIO steps |
 | Alarm dismissed (`ALARM_ALERT_DISMISS_AUTO`) | **Stop color flow + power off** (1s smooth) |
 
 ### Scheduled routines (sunset / fixed time)
@@ -44,7 +44,16 @@ No Tasker install is required. After setup, control is local (no cloud calls fro
 ### Xiaomi MIoT bulb (e.g. BHR9434GL / `xiaomi.light.bulb`)
 
 1. Pair the bulb in **Xiaomi Home** and note its LAN IP (static DHCP recommended).
-2. Extract the **32-character hex token** (cloud token extractor, etc.).
+2. Extract the **32-character hex token** for each bulb (tokens are unique per device) with
+   [PiotrMachowski/Xiaomi-cloud-tokens-extractor](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor):
+
+   ```bash
+   curl -sL https://raw.githubusercontent.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor/master/token_extractor.py \
+     -o /tmp/token_extractor.py
+   python3 /tmp/token_extractor.py
+   ```
+
+   Log in with your Xiaomi account when prompted; the script prints each device’s IP and token.
 3. In Tasker Lite → **Bulbs** → enter **IP** + **token** → **Add bulb** → **Test**.
 4. MIoT properties used: power (2/1), brightness (2/2), CT (2/3), RGB (2/4).
 

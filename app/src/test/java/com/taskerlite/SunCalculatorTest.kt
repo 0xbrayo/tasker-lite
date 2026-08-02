@@ -94,7 +94,9 @@ class SunCalculatorTest {
     fun eveningSunsetRamp_flowExpression() {
         val ramp = LightAction.eveningSunsetRamp()
         val flow = ramp.flowExpression()
-        assertTrue(flow.startsWith("600000,2,2000,1"))
+        // Log-expanded CF: ends at final lumen/CT targets
         assertTrue(flow.contains("2700,70"))
+        assertTrue(flow.split(",").size >= 9 * 4)
+        assertEquals(listOf(1, 35, 70), ramp.phases.map { it.brightness })
     }
 }
