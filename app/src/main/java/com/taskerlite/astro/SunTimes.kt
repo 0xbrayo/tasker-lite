@@ -105,9 +105,11 @@ object SunCalculator {
         minutes: Double,
         zone: ZoneId,
     ): ZonedDateTime {
-        // Normalize into the calendar day range by wrapping 24h if algorithm drifts slightly
-        val normalized = ((minutes % 1440.0) + 1440.0) % 1440.0
-        val ms = (normalized * 60_000.0).toLong()
+        // [minutes] is an offset from UTC midnight and may legitimately fall outside
+        // 0…1440: west of UTC, sunset lands past 24:00 UTC; east of UTC, sunrise lands
+        // before 00:00 UTC. Wrapping into the UTC day would shift the result a full
+        // local calendar day, so let the instant carry across the boundary.
+        val ms = (minutes * 60_000.0).toLong()
         return utcMidnight.plusMillis(ms).atZone(zone)
     }
 

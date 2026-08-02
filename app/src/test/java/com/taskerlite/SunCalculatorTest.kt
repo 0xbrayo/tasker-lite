@@ -45,6 +45,75 @@ class SunCalculatorTest {
         assertTrue("sunset hour was ${sunset.hour}", sunset.hour in 15..16)
     }
 
+    /**
+     * Regression: solar minutes are an offset from UTC midnight and legitimately fall
+     * outside 0…1440 — west of UTC sunset lands past 24:00 UTC, east of UTC sunrise
+     * lands before 00:00 UTC. Wrapping into the UTC day shifted results a full local
+     * calendar day. Nairobi/London sit in the narrow band where the wrap was invisible.
+     */
+    @Test
+    fun solarTimes_landOnRequestedLocalDate_acrossLongitudes() {
+        val date = LocalDate.of(2026, 8, 2)
+        val places = listOf(
+            Triple("New York", 40.7128 to -74.0060, "America/New_York"),
+            Triple("Los Angeles", 34.0522 to -118.2437, "America/Los_Angeles"),
+            Triple("Honolulu", 21.3069 to -157.8583, "Pacific/Honolulu"),
+            Triple("Auckland", -36.8485 to 174.7633, "Pacific/Auckland"),
+            Triple("Sydney", -33.8688 to 151.2093, "Australia/Sydney"),
+            Triple("Nairobi", nairobi, "Africa/Nairobi"),
+            Triple("London", 51.5074 to -0.1278, "Europe/London"),
+        )
+        for ((name, coords, zoneId) in places) {
+            val z = ZoneId.of(zoneId)
+            val sun = SunCalculator.calculate(coords.first, coords.second, date, z)
+            val sunrise = sun.sunrise
+            val sunset = sun.sunset
+            assertNotNull("$name had no sunrise", sunrise)
+            assertNotNull("$name had no sunset", sunset)
+            assertEquals("$name sunrise on wrong local date", date, sunrise!!.toLocalDate())
+            assertEquals("$name sunset on wrong local date", date, sunset!!.toLocalDate())
+            assertTrue("$name sunrise $sunrise not before sunset $sunset", sunrise.isBefore(sunset))
+        }
+    }
+
+    @Test
+    fun nextTrigger_sunrise_doesNotSkipTodayInEasternHemisphere() {
+        // Sydney is UTC+10, so sunrise falls before 00:00 UTC. The day-shift used to make
+        // today's sunrise look like tomorrow's, silently dropping one occurrence.
+        val sydney = ZoneId.of("Australia/Sydney")
+        val loc = GeoLocation(latitude = -33.8688, longitude = 151.2093)
+        val routine = ScheduledRoutine(
+            name = "Wake",
+            anchor = ScheduleAnchor.SUNRISE,
+            offsetMinutes = 0,
+            action = LightAction.morningSunrise(),
+        )
+        // 03:00 local — today's sunrise is still ahead and must be the next trigger
+        val now = ZonedDateTime.of(2026, 8, 2, 3, 0, 0, 0, sydney)
+        val next = RoutineScheduler.nextTrigger(routine, loc, now, sydney)
+        assertNotNull(next)
+        assertEquals(LocalDate.of(2026, 8, 2), next!!.toLocalDate())
+        assertTrue("sunrise hour was ${next.hour}", next.hour in 5..8)
+    }
+
+    @Test
+    fun nextTrigger_sunset_usesTodayInWesternHemisphere() {
+        // Los Angeles is UTC-7, so sunset falls past 24:00 UTC.
+        val la = ZoneId.of("America/Los_Angeles")
+        val loc = GeoLocation(latitude = 34.0522, longitude = -118.2437)
+        val routine = ScheduledRoutine(
+            name = "Sunset",
+            anchor = ScheduleAnchor.SUNSET,
+            offsetMinutes = 0,
+            action = LightAction.eveningSunsetRamp(),
+        )
+        val now = ZonedDateTime.of(2026, 8, 2, 12, 0, 0, 0, la)
+        val next = RoutineScheduler.nextTrigger(routine, loc, now, la)
+        assertNotNull(next)
+        assertEquals(LocalDate.of(2026, 8, 2), next!!.toLocalDate())
+        assertTrue("sunset hour was ${next.hour}", next.hour in 18..21)
+    }
+
     @Test
     fun defaultRoutines_includeSunsetRamp() {
         val routines = defaultRoutines()
