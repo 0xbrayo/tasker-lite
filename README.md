@@ -88,8 +88,12 @@ Or open the project in **Android Studio** and Run.
 
 Pushing a **cryptographically signed** annotated tag matching `v*` runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml): it verifies the
-tag signature, runs `./gradlew :app:assembleRelease`, and attaches the APK to a
-GitHub Release for that tag. **Unsigned or lightweight tags fail** (no release).
+tag signature, runs the unit tests, runs `./gradlew :app:assembleRelease`, and
+attaches the APK to a GitHub Release for that tag. **Unsigned or lightweight tags
+fail** (no release), and **failing tests block the release**.
+
+The APK is stamped with the tag: `v1.2.3` builds `versionName 1.2.3` /
+`versionCode 10203`. Local builds (no tag) stay at `1.0.0` / `1`.
 
 ### Cut a release
 

@@ -62,6 +62,26 @@ class ReleaseWorkflowTest {
     }
 
     @Test
+    fun workflow_runsUnitTestsBeforeBuildingTheApk() {
+        assertTrue(
+            "release must be gated on the unit test suite",
+            yaml.contains("testDebugUnitTest"),
+        )
+        assertTrue(
+            "tests must run before assembleRelease",
+            yaml.indexOf("testDebugUnitTest") < yaml.indexOf(":app:assembleRelease"),
+        )
+    }
+
+    @Test
+    fun workflow_stampsApkVersionFromTag() {
+        assertTrue(
+            "APK version must come from the tag, not a hardcoded versionCode",
+            yaml.contains("RELEASE_VERSION_NAME"),
+        )
+    }
+
+    @Test
     fun workflow_publishesGithubReleaseWithApkAsset() {
         assertTrue(
             "must use softprops/action-gh-release (or equivalent release upload)",
